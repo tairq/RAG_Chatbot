@@ -1,0 +1,49 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploaded PDFs (ingested)
+uploads/
+
+# Streamlit
+.streamlit/
+
+# Testing
+.pytest_cache/
+
+# Local Claude tooling config
+.claude/
+.agents/
+.mcp.json
+skills-lock.json
+
+# Source PDFs (large binaries)
+*.pdf
+
+# Memory files (personal notes)
+memory/
