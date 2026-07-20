@@ -71,7 +71,16 @@ def list_documents() -> list[dict[str, Any]]:
         .order("created_at", desc=True)
         .execute()
     )
-    return result.data if result.data else []
+    # Deduplicate by title — the raw query returns one row per chunk,
+    # not one row per document. Without aggregation, we collapse in Python.
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for doc in result.data or []:
+        title = doc.get("title")
+        if title and title not in seen:
+            seen.add(title)
+            unique.append(doc)
+    return unique
 
 
 def delete_document(title: str) -> int:

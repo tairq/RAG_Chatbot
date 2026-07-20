@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus — RAG Chatbot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Rubik:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ═══ Ambient Background Layers ═══ -->
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <div id="app">
+
+    <!-- ── Floating Sidebar ──────────────────────────── -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-mark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+              <line x1="12" y1="22" x2="12" y2="15.5"/>
+              <polyline points="22 8.5 12 15.5 2 8.5"/>
+            </svg>
+          </span>
+          <span class="logo-text">Nexus</span>
+        </div>
+        <button id="newChatBtn" class="btn-accent" title="New conversation">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          New Chat
+        </button>
+      </div>
+
+      <div class="sidebar-body">
+        <div class="sidebar-section">
+          <h3 class="section-label">Conversations</h3>
+          <ul id="sessionList" class="session-list"></ul>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-section">
+          <div class="section-header">
+            <h3 class="section-label">Documents</h3>
+            <label for="fileInput" class="btn-icon-sm" title="Upload PDF">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </label>
+            <input type="file" id="fileInput" accept=".pdf" hidden>
+          </div>
+          <ul id="documentList" class="document-list"></ul>
+          <p id="emptyDocs" class="empty-hint">No documents uploaded yet</p>
+        </div>
+        <div class="sidebar-status">
+          <span id="connectionDot" class="status-dot"></span>
+          <span id="connectionText">Connecting…</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main Terminal ─────────────────────────────── -->
+    <main id="main">
+      <!-- Mobile header -->
+      <div id="mobileHeader">
+        <button id="menuToggle" class="hamburger" aria-label="Toggle sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <span class="mobile-title">Nexus</span>
+      </div>
+
+      <!-- Overlay (mobile sidebar backdrop) -->
+      <div id="sidebarOverlay" class="overlay hidden"></div>
+
+      <!-- ── Empty State ─────────────────────────────── -->
+      <div id="emptyState">
+        <div class="empty-emblem">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+            <line x1="12" y1="22" x2="12" y2="15.5"/>
+            <polyline points="22 8.5 12 15.5 2 8.5"/>
+            <polyline points="2 8.5 12 2 22 8.5" stroke-width="0.6" opacity="0.4"/>
+            <line x1="12" y1="15.5" x2="12" y2="8" stroke-width="0.6" opacity="0.4"/>
+          </svg>
+        </div>
+        <h2 class="empty-heading">Knowledge Engine</h2>
+        <p class="empty-sub">Upload documents and query them with precision. Every answer is grounded in your sources, no hallucination.</p>
+        <div class="empty-actions">
+          <button id="emptyNewChatBtn" class="btn-accent">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Begin a Conversation
+          </button>
+          <label for="fileInput2" class="btn-ghost">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3-3 3 3"/></svg>
+            Upload PDF
+          </label>
+          <input type="file" id="fileInput2" accept=".pdf" hidden>
+        </div>
+      </div>
+
+      <!-- ── Chat View ───────────────────────────────── -->
+      <div id="chatView" class="hidden">
+        <div id="messagesContainer">
+          <div id="messagesList"></div>
+          <div id="typingIndicator" class="typing-indicator hidden">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="typing-label">Analyzing sources</span>
+          </div>
+        </div>
+
+        <div id="inputBar">
+          <div class="input-wrap">
+            <textarea id="messageInput" rows="1" placeholder="Ask anything from your documents…" aria-label="Message input"></textarea>
+            <button id="sendBtn" class="btn-send" disabled aria-label="Send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Loading Overlay ─────────────────────────── -->
+      <div id="loadingOverlay" class="hidden">
+        <div class="loading-modal">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Processing your document…</p>
+          <p class="loading-sub">Extracting text, chunking, and embedding</p>
+        </div>
+      </div>
+
+      <!-- ── Toast Container ─────────────────────────── -->
+      <div id="toastContainer"></div>
+
+      <!-- ── Confirm Dialog ─────────────────────────── -->
+      <div id="confirmOverlay" class="confirm-overlay hidden">
+        <div class="confirm-modal">
+          <div class="confirm-icon">⚠️</div>
+          <p id="confirmMessage" class="confirm-message">Are you sure?</p>
+          <div class="confirm-buttons">
+            <button id="confirmNo" class="btn-ghost">No</button>
+            <button id="confirmYes" class="btn-danger">Yes, remove</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
