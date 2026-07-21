@@ -25,7 +25,7 @@ EMBEDDING_DIMENSION = 2048
 
 # Chat model (OpenRouter — free tier)
 OPENROUTER_CHAT_MODEL = os.getenv(
-    "OPENROUTER_CHAT_MODEL", "tencent/hy3:free"
+    "OPENROUTER_CHAT_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"
 )
 CHAT_MODEL = OPENROUTER_CHAT_MODEL
 
