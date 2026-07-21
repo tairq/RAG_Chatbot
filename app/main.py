@@ -44,7 +44,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="RAG Chatbot", version="1.1.0")
 
-# CORS — allow Streamlit frontend on port 8501
+# CORS — allow local development frontends
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

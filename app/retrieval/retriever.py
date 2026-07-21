@@ -9,7 +9,7 @@ async def retrieve(query: str, top_k: int = TOP_K) -> list[dict[str, Any]]:
     """
     Retrieve the top-k most relevant chunks for a query.
 
-    1. Embed the query using Gemini.
+    1. Embed the query using OpenRouter.
     2. Perform vector similarity search in Supabase.
     3. Return the chunks with their similarity scores.
 

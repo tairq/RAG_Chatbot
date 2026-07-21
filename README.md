@@ -5,20 +5,39 @@ A Retrieval-Augmented Generation chatbot with multi-session conversations, docum
 **Upload a document** (PDF, DOCX, XLSX, PPTX) → it's chunked, embedded via OpenRouter, and stored in Supabase's pgvector database. **Ask questions** → relevant chunks are retrieved, and the LLM answers based *only* on the source document.
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│  PDF/DOCX/XLSX/PPTX                                       │
-│       ↓                                                    │
-│  Text Extraction → Chunking → OpenRouter Embedding         │
-│                                         ↓                  │
-│                               Supabase pgvector            │
-│                                         ↓                  │
-│  User Question → OpenRouter Embedding → Vector Search      │
-│                                         ↓                  │
-│  Similarity ≥ 0.5? ──Yes──→ OpenRouter LLM (strict RAG)   │
-│       │                                                    │
-│       └─No / rate-limited ──→ Self-hosted LLM (fallback)   │
-└────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  Upload → Extract → Chunk → Embed                               │
+│                                    ↓                            │
+│                          Supabase pgvector                       │
+│                                    ↓                            │
+│  Question → Embed → Vector Search → Top-k Chunks               │
+│                                    ↓                            │
+│                   ┌──────────────────────────┐                  │
+│                   │  Similarity ≥ 0.5        │                  │
+│                   │  OR doc named?           │                  │
+│                   └───┬──────────────┬───────┘                  │
+│                       │ YES          │ NO                       │
+│                       ▼              ▼                          │
+│          ┌──────────────────┐  ┌──────────────────┐             │
+│          │ OpenRouter LLM   │  │ General Chat     │             │
+│          │ (strict RAG      │  │ (no RAG context) │             │
+│          │  with chunks)    │  │ self-hosted LLM  │             │
+│          └────┬─────────────┘  └──────────────────┘             │
+│               │                                                  │
+│         429?──┤                                                  │
+│               │ YES                                              │
+│               ▼                                                  │
+│          ┌──────────────────┐                                   │
+│          │ Self-hosted LLM  │                                   │
+│          │ (RAG, same       │                                   │
+│          │  chunks)         │                                   │
+│          └──────────────────┘                                   │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+**Two independent fallback paths:**
+1. **Low similarity + no doc named** → general chat model with no document context.
+2. **OpenRouter 429** → self-hosted LLM using the *same* retrieved chunks (still RAG).
 
 ## Stack
 
@@ -85,6 +104,8 @@ OPENROUTER_CHAT_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free
 | `OPENROUTER_API_KEY` | Yes | OpenRouter API key (chat + embeddings) |
 | `OPENROUTER_CHAT_MODEL` | No | OpenRouter chat model (default: `nvidia/nemotron-3-ultra-550b-a55b:free`) |
 | `OPENROUTER_EMBEDDING_MODEL` | No | OpenRouter embedding model (default: `nvidia/nemotron-3-embed-1b:free`) |
+| `OPENROUTER_BASE_URL` | No | OpenRouter API base URL (default: `https://openrouter.ai/api/v1`) |
+| `OPENROUTER_RPM` | No | Rate limit — requests per minute (default: `10`) |
 | `GEMINI_API_KEY` | No | Legacy — only needed if switching back to Gemini |
 | `LOCAL_CHAT_ENDPOINT` | No | Self-hosted LLM endpoint URL (fallback) |
 | `LOCAL_CHAT_API_KEY` | No | API key for the self-hosted endpoint |
@@ -110,7 +131,7 @@ That's it — one command. The API and frontend are served from the same process
 - App: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-> **Note on the legacy Streamlit UI:** The old Streamlit frontend (`streamlit_app/`) is **deprecated** and no longer maintained. The current frontend is the vanilla SPA served directly by FastAPI on port 8000.
+> **Note:** The old Streamlit frontend has been removed. The current frontend is the vanilla SPA served directly by FastAPI on port 8000.
 
 ### 5. Free-tier rate limits
 
@@ -176,7 +197,6 @@ RAG_Chatbot/
 ├── scripts/                  # Database setup
 │   ├── init_db.sql                # Documents table + match_documents
 │   └── init_chat_history.sql      # Chat sessions/messages tables
-├── streamlit_app/            # Legacy frontend (deprecated)
 ├── tests/                    # Test suite
 ├── .env.example              # Environment variable template
 └── requirements.txt          # Python dependencies

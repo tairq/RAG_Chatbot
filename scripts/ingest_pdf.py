@@ -10,9 +10,7 @@ so you don't need the FastAPI server running.
 import sys
 import os
 import time
-import json
-import re
-import google.genai.errors
+import httpx
 
 # Ensure the project root is on sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -44,13 +42,11 @@ def _embed_with_retry(batch: list[str], batch_no: int, total: int) -> list[list[
     while True:
         try:
             return embed_batch(batch)
-        except google.genai.errors.ClientError as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                # Try to extract retry delay from error message
-                m = re.search(r"retry in ([\d.]+)s", str(e))
-                delay = max(float(m.group(1)), 30) if m else 30.0
-                print(f"      Rate limited! Waiting {delay:.0f}s...")
-                time.sleep(delay)
+        except (httpx.HTTPStatusError, RuntimeError) as e:
+            err_str = str(e)
+            if "429" in err_str or "rate_limit" in err_str:
+                print(f"      Rate limited! Waiting 30s...")
+                time.sleep(30)
                 # Continue loop to retry
             else:
                 raise

@@ -7,7 +7,8 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# Google Gemini (legacy — switch to OpenRouter for chat)
+# Google Gemini API key (legacy — kept for backward compatibility)
+# No longer used by default; all LLM calls go through OpenRouter.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # OpenRouter

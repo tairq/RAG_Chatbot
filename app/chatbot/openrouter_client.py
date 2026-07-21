@@ -57,7 +57,7 @@ Context from the document(s):
 {context_str}"""
 
 
-# ── Public API (same interface as old gemini_client) ────────
+# ── Public API ─────────────────────────────────────────────
 
 
 def ask_openrouter(

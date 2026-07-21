@@ -18,7 +18,6 @@ Upload a PDF → it gets chunked, embedded via OpenRouter, and stored in Supabas
 |--------|---------|
 | Start FastAPI server (serves SPA + API) | `uvicorn app.main:app --reload` (port 8000) |
 | Open the app | http://localhost:8000 |
-| Legacy Streamlit UI | `streamlit run streamlit_app/app.py` (port 8501) |
 | Install dependencies | `pip install -r requirements.txt` |
 | Run tests | `pytest tests/ -v` |
 
@@ -34,23 +33,20 @@ RAG_Chatbot/
 │   │   ├── vector_store.py    # Documents pgvector CRUD
 │   │   └── chat_store.py      # Chat sessions & messages CRUD
 │   ├── ingestion/
-│   │   ├── pdf_processor.py   # PDF text extraction
+│   │   ├── document_processor.py  # Multi-format text extraction
 │   │   ├── chunker.py         # Text chunking
 │   │   └── embedder.py        # OpenRouter embedding API
 │   ├── retrieval/
 │   │   └── retriever.py       # Query → embed → search
 │   └── chatbot/
 │       ├── openrouter_client.py  # OpenRouter LLM (RAG / strict mode)
-│       ├── local_client.py       # Self-hosted LLM (general chat fallback)
-│       └── gemini_client.py      # Gemini LLM (legacy)
+│       └── local_client.py       # Self-hosted LLM (general chat fallback)
 ├── static/                # Vanilla SPA frontend (served by FastAPI)
 │   ├── index.html             # SPA shell
 │   ├── css/
 │   │   └── style.css          # Dark theme styles
 │   └── js/
 │       └── app.js             # Chat app logic (no frameworks)
-├── streamlit_app/
-│   └── app.py             # Legacy Streamlit UI (deprecated)
 ├── scripts/
 │   ├── init_db.sql            # Documents table + match_documents function
 │   └── init_chat_history.sql  # Chat sessions/messages tables
@@ -130,6 +126,8 @@ User Question → OpenRouter Embedding → Vector Search → Top-k Chunks → Si
 | `OPENROUTER_API_KEY` | OpenRouter API key (for both chat + embeddings) |
 | `OPENROUTER_CHAT_MODEL` | OpenRouter model for chat (default: `nvidia/nemotron-3-ultra-550b-a55b:free`) |
 | `OPENROUTER_EMBEDDING_MODEL` | OpenRouter model for embeddings (default: `nvidia/nemotron-3-embed-1b:free`) |
+| `OPENROUTER_BASE_URL` | OpenRouter API base URL (default: `https://openrouter.ai/api/v1`) |
+| `OPENROUTER_RPM` | Rate limit for free-tier OpenRouter models (default: `10`) |
 | `GEMINI_API_KEY` | Google AI Studio API key (legacy, unused if OpenRouter is active) |
 | `LOCAL_CHAT_ENDPOINT` | Self-hosted LLM endpoint URL (hybrid fallback) |
 | `LOCAL_CHAT_API_KEY` | API key for the self-hosted endpoint |
