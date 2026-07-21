@@ -387,11 +387,45 @@ a:hover {
   background: var(--surface-2);
 }
 
-.document-item::before {
-  content: '📄';
-  font-size: 12px;
+/* ── Document Type Badges ──────────────────────────── */
+
+.doc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  border-radius: 3px;
   flex-shrink: 0;
-  opacity: 0.8;
+  line-height: 1.5;
+}
+
+.badge-pdf {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.badge-docx {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.badge-xlsx {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.2);
+}
+
+.badge-pptx {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.2);
 }
 
 .doc-name {
@@ -880,9 +914,105 @@ a:hover {
   }
 }
 
-/* ── Input Bar Glass ──────────────────────────────── */
+/* ── @Mention Dropdown ──────────────────────────── */
+
+#mentionDropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 16px;
+  right: 16px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: rgba(17, 29, 46, 0.96);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+  display: none;
+  margin-bottom: 4px;
+}
+
+#mentionDropdown.visible {
+  display: block;
+}
+
+.mention-dropdown-header {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 8px 12px 4px;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-2);
+  transition: background var(--transition), color var(--transition);
+}
+
+.mention-item:hover,
+.mention-item.selected {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.mention-item .doc-badge {
+  flex-shrink: 0;
+}
+
+.mention-item .doc-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ── Mention Chips in Messages ───────────────────── */
+
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--accent);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.mention-chip::before {
+  content: '@';
+  opacity: 0.6;
+}
+
+.message.assistant .mention-chip {
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.2);
+  color: var(--violet);
+}
+
+/* ── Input wrapper: relative for dropdown positioning ── */
 
 #inputBar {
+  position: relative;
   padding: 12px 20px 18px;
   max-width: 760px;
   margin: 0 auto;

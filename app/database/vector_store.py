@@ -38,6 +38,7 @@ def store_chunks(
 def search_similar(
     query_embedding: list[float],
     top_k: int = 5,
+    filter_titles: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Search for the most similar chunks via cosine similarity.
@@ -45,18 +46,23 @@ def search_similar(
     Args:
         query_embedding: The embedding vector to search with.
         top_k: Number of results to return.
+        filter_titles: Optional list of document titles to restrict search to.
 
     Returns:
         List of dicts with 'id', 'content', 'similarity', 'title'.
     """
     supabase = get_supabase()
 
+    params: dict[str, Any] = {
+        "query_embedding": query_embedding,
+        "match_count": top_k,
+    }
+    if filter_titles:
+        params["filter_titles"] = filter_titles
+
     result = supabase.rpc(
         "match_documents",
-        {
-            "query_embedding": query_embedding,
-            "match_count": top_k,
-        },
+        params,
     ).execute()
 
     return result.data if result.data else []

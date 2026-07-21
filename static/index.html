@@ -47,10 +47,9 @@
         <div class="sidebar-section">
           <div class="section-header">
             <h3 class="section-label">Documents</h3>
-            <label for="fileInput" class="btn-icon-sm" title="Upload PDF">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <label for="fileInput" class="btn-icon-sm" title="Upload document (PDF, DOCX, XLSX, PPTX)">              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
             </label>
-            <input type="file" id="fileInput" accept=".pdf" hidden>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx,.xls,.pptx" hidden>
           </div>
           <ul id="documentList" class="document-list"></ul>
           <p id="emptyDocs" class="empty-hint">No documents uploaded yet</p>
@@ -95,9 +94,9 @@
           </button>
           <label for="fileInput2" class="btn-ghost">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3-3 3 3"/></svg>
-            Upload PDF
+            Upload Document
           </label>
-          <input type="file" id="fileInput2" accept=".pdf" hidden>
+          <input type="file" id="fileInput2" accept=".pdf,.docx,.xlsx,.xls,.pptx" hidden>
         </div>
       </div>
 
@@ -130,7 +129,7 @@
         <div class="loading-modal">
           <div class="loading-spinner"></div>
           <p class="loading-text">Processing your document…</p>
-          <p class="loading-sub">Extracting text, chunking, and embedding</p>
+          <p class="loading-sub">Extracting, chunking, and embedding</p>
         </div>
       </div>
 

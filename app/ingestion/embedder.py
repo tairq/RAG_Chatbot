@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import deque
 
@@ -8,6 +9,8 @@ from app.config import (
     OPENROUTER_BASE_URL,
     OPENROUTER_EMBEDDING_MODEL,
 )
+
+logger = logging.getLogger("rag_chatbot.embedder")
 
 _HTTP_TIMEOUT = 60.0
 
@@ -53,12 +56,26 @@ def _call_embeddings(texts: list[str]) -> list[list[float]]:
         resp.raise_for_status()
         data = resp.json()
 
+    # Validate the API response shape before indexing
+    if "data" not in data:
+        error_body = str(data.get("error", data))[:300]
+        logger.error(
+            "OpenRouter embedding response missing 'data' key: %s", error_body
+        )
+        raise RuntimeError(
+            f"Embedding API returned an unexpected response: {error_body}. "
+            "This is often a transient rate-limit or model overload — "
+            "try again in a minute."
+        )
+
     # Sort by index to maintain order
     sorted_items = sorted(data["data"], key=lambda x: x["index"])
     return [item["embedding"] for item in sorted_items]
 
 
 # ── Public API ───────────────────────────────────────────
+
+_MAX_BATCH_SIZE = 96  # OpenRouter free embedding limit
 
 
 def embed_text(text: str) -> list[float]:
@@ -80,10 +97,22 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     """
     Generate embedding vectors for a batch of texts.
 
+    Automatically splits large batches to respect the OpenRouter
+    free-model limit of 96 inputs per request.
+
     Args:
         texts: List of text strings to embed.
 
     Returns:
         List of embedding vectors (each 2048-dim).
     """
-    return _call_embeddings(texts)
+    if len(texts) <= _MAX_BATCH_SIZE:
+        return _call_embeddings(texts)
+
+    # Split into sub-batches and merge results
+    logger.info("Large batch of %d texts — splitting into sub-batches of %d", len(texts), _MAX_BATCH_SIZE)
+    all_embeddings: list[list[float]] = []
+    for start in range(0, len(texts), _MAX_BATCH_SIZE):
+        sub = texts[start:start + _MAX_BATCH_SIZE]
+        all_embeddings.extend(_call_embeddings(sub))
+    return all_embeddings

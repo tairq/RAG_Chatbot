@@ -13,6 +13,17 @@ const state = {
   apiConnected: false,
 };
 
+// ── @Mention State ───────────────────────────────
+
+const mention = {
+  active: false,
+  selectedIndex: 0,
+  start: -1,
+  end: -1,
+  searchTerm: '',
+  filteredDocs: [],
+};
+
 // ── DOM References ─────────────────────────────────
 
 const el = {
@@ -40,6 +51,9 @@ const el = {
   confirmMessage:     document.getElementById('confirmMessage'),
   confirmYes:         document.getElementById('confirmYes'),
   confirmNo:          document.getElementById('confirmNo'),
+
+  // Mention dropdown (created dynamically)
+  mentionDropdown:    null,
 };
 
 // ── API Client ─────────────────────────────────────
@@ -183,6 +197,151 @@ function closeMobileSidebar() {
   }
 }
 
+// ── @Mention System ────────────────────────────────
+
+function initMentionDropdown() {
+  var dropdown = document.createElement('div');
+  dropdown.id = 'mentionDropdown';
+  dropdown.style.display = 'none';
+  el.inputBar = document.getElementById('inputBar');
+  el.inputBar.appendChild(dropdown);
+  el.mentionDropdown = dropdown;
+
+  // Click outside to dismiss
+  document.addEventListener('mousedown', function (e) {
+    if (mention.active && !el.mentionDropdown.contains(e.target) && e.target !== el.messageInput) {
+      dismissMentionDropdown();
+    }
+  });
+}
+
+function handleMentionInput() {
+  var pos = el.messageInput.selectionStart;
+  var text = el.messageInput.value;
+
+  // Walk backwards from cursor to find @ or whitespace
+  var atIdx = -1;
+  for (var i = pos - 1; i >= 0; i--) {
+    var ch = text[i];
+    if (ch === '@') { atIdx = i; break; }
+    if (/\s/.test(ch)) break;
+  }
+
+  if (atIdx === -1) {
+    dismissMentionDropdown();
+    return;
+  }
+
+  // Don't trigger if @ is part of a word (email, etc.)
+  if (atIdx > 0 && /\w/.test(text[atIdx - 1])) {
+    dismissMentionDropdown();
+    return;
+  }
+
+  var searchTerm = text.slice(atIdx + 1, pos);
+
+  // If search term exactly matches a doc title, mention is complete
+  if (state.documents.some(function (d) { return d.title === searchTerm; })) {
+    dismissMentionDropdown();
+    return;
+  }
+
+  // Update mention state
+  mention.active = true;
+  mention.start = atIdx;
+  mention.end = pos;
+  mention.searchTerm = searchTerm;
+
+  // Filter documents by search term
+  var lowerSearch = searchTerm.toLowerCase();
+  mention.filteredDocs = state.documents.filter(function (d) {
+    return d.title && d.title.toLowerCase().includes(lowerSearch);
+  });
+
+  // Reset selection
+  mention.selectedIndex = 0;
+
+  updateMentionDropdown();
+}
+
+function updateMentionDropdown() {
+  var dd = el.mentionDropdown;
+  if (!dd) return;
+
+  if (!mention.active || mention.filteredDocs.length === 0) {
+    dd.style.display = 'none';
+    return;
+  }
+
+  // Cap results at 6
+  var docs = mention.filteredDocs.slice(0, 6);
+
+  var html = '';
+  for (var i = 0; i < docs.length; i++) {
+    var d = docs[i];
+    var cls = 'mention-item' + (i === mention.selectedIndex ? ' selected' : '');
+    var badge = docTypeBadge(d.title || '');
+    html += (
+      '<div class="' + cls + '" data-title="' + escapeHtml(d.title) + '">' +
+        badge +
+        '<span class="doc-name">' + escapeHtml(d.title) + '</span>' +
+      '</div>'
+    );
+  }
+
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+}
+
+function selectMention(docTitle) {
+  if (!mention.active) return;
+
+  var textarea = el.messageInput;
+  var val = textarea.value;
+  var before = val.slice(0, mention.start);
+  var after = val.slice(mention.end);
+
+  // Insert the mention text
+  var mentionText = '@' + docTitle;
+  textarea.value = before + mentionText + after;
+
+  // Place cursor after the inserted mention
+  var newPos = mention.start + mentionText.length;
+  textarea.selectionStart = textarea.selectionEnd = newPos;
+
+  dismissMentionDropdown();
+
+  // Manually trigger resize and button state
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+  el.sendBtn.disabled = !textarea.value.trim() || state.isTyping;
+  textarea.focus();
+}
+
+function dismissMentionDropdown() {
+  mention.active = false;
+  mention.selectedIndex = 0;
+  mention.start = -1;
+  mention.end = -1;
+  mention.searchTerm = '';
+  mention.filteredDocs = [];
+
+  if (el.mentionDropdown) {
+    el.mentionDropdown.style.display = 'none';
+    el.mentionDropdown.innerHTML = '';
+  }
+}
+
+function parseMentions(text) {
+  var regex = /@([^\s]+)/g;
+  var titles = [];
+  var match;
+  while ((match = regex.exec(text)) !== null) {
+    titles.push(match[1]);
+  }
+  return titles;
+}
+
 // ── Session Rename ─────────────────────────────────
 
 function startRename(sessionId, titleEl) {
@@ -250,7 +409,19 @@ async function renameSession(sessionId, newTitle, titleEl) {
 
 // ── Render Functions ───────────────────────────────
 
-function renderSidebar() {
+function docTypeBadge(title) {
+    var dot = title.lastIndexOf('.');
+    if (dot === -1) return '';
+    var ext = title.slice(dot + 1).toLowerCase();
+    var cls = 'doc-badge';
+    if (ext === 'pdf') cls += ' badge-pdf';
+    else if (ext === 'docx') cls += ' badge-docx';
+    else if (ext === 'xlsx' || ext === 'xls') cls += ' badge-xlsx';
+    else if (ext === 'pptx') cls += ' badge-pptx';
+    return '<span class="' + cls + '">' + ext.toUpperCase() + '</span>';
+  }
+
+  function renderSidebar() {
   // ── Sessions ──
   if (state.sessions.length === 0) {
     el.sessionList.innerHTML =
@@ -277,6 +448,7 @@ function renderSidebar() {
       var title = d.title || '';
       return (
         '<li class="document-item" title="' + escapeHtml(title) + '">' +
+          docTypeBadge(title) +
           '<span class="doc-name">' + escapeHtml(title) + '</span>' +
           '<span class="doc-delete" data-action="delete-document" data-title="' + escapeHtml(title) + '" title="Delete document">✕</span>' +
         '</li>'
@@ -300,7 +472,8 @@ function renderMessages() {
 
   el.messagesList.innerHTML = state.messages.map(function (msg) {
     var isUser = msg.role === 'user';
-    var content = escapeHtml(msg.content);
+    var content = escapeHtml(msg.content)
+      .replace(/@([^\s]+)/g, '<span class="mention-chip">$1</span>');
 
     var sourcesHtml = '';
     if (!isUser && msg.sources) {
@@ -456,6 +629,9 @@ async function sendMessage() {
   el.messageInput.style.height = 'auto';
   el.sendBtn.disabled = true;
 
+  // Parse @mentions to send as document filter
+  var mentionedDocs = parseMentions(text);
+
   // Optimistically add user message
   state.messages.push({ role: 'user', content: text, sources: null });
   renderMessages();
@@ -465,9 +641,11 @@ async function sendMessage() {
   setTypingIndicator(true);
 
   try {
-    var data = await api.post('/api/chat/sessions/' + state.activeSessionId + '/messages', {
-      query: text,
-    });
+    var body = { query: text };
+    if (mentionedDocs.length > 0) {
+      body.mentioned_docs = mentionedDocs;
+    }
+    var data = await api.post('/api/chat/sessions/' + state.activeSessionId + '/messages', body);
 
     // Add assistant response
     state.messages.push({
@@ -497,8 +675,12 @@ async function sendMessage() {
 
 async function uploadDocument(file) {
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    showToast('Only PDF files are supported', 'error');
+
+  var name = file.name.toLowerCase();
+  var validExts = ['.pdf', '.docx', '.xlsx', '.xls', '.pptx'];
+  var hasValidExt = validExts.some(function (ext) { return name.endsWith(ext); });
+  if (!hasValidExt) {
+    showToast('Unsupported file. Accepted: PDF, DOCX, XLSX, PPTX', 'error');
     return;
   }
 
@@ -546,19 +728,46 @@ function initEvents() {
   // Send message
   el.sendBtn.addEventListener('click', sendMessage);
 
-  // Enter to send, Shift+Enter for newline
+  // Enter to send, Shift+Enter for newline, @mention navigation
   el.messageInput.addEventListener('keydown', function (e) {
+    if (mention.active) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        mention.selectedIndex = Math.min(mention.selectedIndex + 1, mention.filteredDocs.length - 1);
+        updateMentionDropdown();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        mention.selectedIndex = Math.max(mention.selectedIndex - 1, 0);
+        updateMentionDropdown();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (mention.filteredDocs.length > 0 && mention.selectedIndex >= 0) {
+          selectMention(mention.filteredDocs[mention.selectedIndex].title);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        dismissMentionDropdown();
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   });
 
-  // Auto-resize textarea + enable/disable send button
+  // Auto-resize textarea + enable/disable send button + @mention
   el.messageInput.addEventListener('input', function () {
     el.messageInput.style.height = 'auto';
     el.messageInput.style.height = Math.min(el.messageInput.scrollHeight, 200) + 'px';
     el.sendBtn.disabled = !el.messageInput.value.trim() || state.isTyping;
+    handleMentionInput();
   });
 
   // Session list click & dblclick delegation
@@ -595,6 +804,16 @@ function initEvents() {
     }
   });
 
+  // @mention dropdown click delegation
+  if (el.mentionDropdown) {
+    el.mentionDropdown.addEventListener('mousedown', function (e) {
+      var item = e.target.closest('.mention-item');
+      if (!item) return;
+      e.preventDefault();
+      selectMention(item.dataset.title);
+    });
+  }
+
   // File upload (sidebar)
   el.fileInput.addEventListener('change', function () {
     var file = el.fileInput.files[0];
@@ -621,6 +840,11 @@ function initEvents() {
     el.sidebarOverlay.classList.add('hidden');
   });
 
+  // Dismiss mention dropdown on textarea blur (with delay for click capture)
+  el.messageInput.addEventListener('blur', function () {
+    setTimeout(dismissMentionDropdown, 150);
+  });
+
   // Resize: auto-close mobile sidebar
   window.addEventListener('resize', function () {
     if (window.innerWidth >= 768) {
@@ -634,6 +858,7 @@ function initEvents() {
 
 async function init() {
   initEvents();
+  initMentionDropdown();
 
   // Check health and set connection status
   await checkHealth();

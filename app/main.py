@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 import uuid
 import traceback
@@ -15,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.chatbot.local_client import chat_general
+from app.chatbot.local_client import chat_general, chat_rag
 from app.chatbot.openrouter_client import ask_openrouter, ask_openrouter_with_history
 from app.config import CHUNK_OVERLAP, CHUNK_SIZE, SIMILARITY_THRESHOLD, TOP_K
 from app.database.chat_store import (
@@ -34,8 +35,8 @@ from app.database.vector_store import (
     store_chunks,
 )
 from app.ingestion.chunker import chunk_text
+from app.ingestion.document_processor import extract_text, is_supported
 from app.ingestion.embedder import embed_batch
-from app.ingestion.pdf_processor import extract_text_from_pdf
 
 # Ensure the uploads directory exists
 UPLOAD_DIR = Path("uploads")
@@ -78,6 +79,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 class ChatRequest(BaseModel):
     query: str
     top_k: int = TOP_K
+    mentioned_docs: list[str] | None = None
 
 
 class ChatResponse(BaseModel):
@@ -114,6 +116,7 @@ class SessionUpdateRequest(BaseModel):
 class SessionMessageRequest(BaseModel):
     query: str
     top_k: int = TOP_K
+    mentioned_docs: list[str] | None = None
 
 
 class SessionMessageResponse(BaseModel):
@@ -121,6 +124,91 @@ class SessionMessageResponse(BaseModel):
     content: str
     sources: list[dict[str, Any]]
     created_at: str | None = None
+
+
+# ── Response Formatting ──────────────────────────────────
+
+
+def to_plain_text(answer: str) -> str:
+    """Remove common Markdown syntax from a model response before returning it."""
+    answer = re.sub(r"```(?:[a-zA-Z0-9_+-]+)?\n?", "", answer)
+    answer = answer.replace("```", "")
+    answer = re.sub(r"!\[([^]]*)\]\([^)]*\)", r"\1", answer)
+    answer = re.sub(r"\[([^]]+)\]\([^)]*\)", r"\1", answer)
+    answer = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", answer)
+    answer = re.sub(r"(?m)^\s*[-*+]\s+", "", answer)
+    answer = re.sub(r"(?m)^\s*\d+[.)]\s+", "", answer)
+    answer = re.sub(r"(?m)^\s*>\s?", "", answer)
+    answer = re.sub(r"(?m)^\s*([-*_])(?:\s*\1){2,}\s*$", "", answer)
+    answer = re.sub(r"(\*\*|__)(.*?)\1", r"\2", answer)
+    answer = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", answer)
+    answer = re.sub(r"(?<!_)_([^_\n]+)_(?!_)", r"\1", answer)
+    answer = re.sub(r"`([^`]+)`", r"\1", answer)
+    return re.sub(r"\n{3,}", "\n\n", answer).strip()
+
+
+def resolve_document_references(
+    query: str,
+    mentioned_docs: list[str] | None,
+) -> tuple[list[str] | None, str]:
+    """Find uploaded filenames written directly in a query and remove them for retrieval."""
+    titles = list(mentioned_docs or [])
+    retrieval_query = query
+
+    for document in list_documents():
+        title = document.get("title", "")
+        if title and re.search(re.escape(title), query, flags=re.IGNORECASE):
+            if title not in titles:
+                titles.append(title)
+            retrieval_query = re.sub(re.escape(title), "", retrieval_query, flags=re.IGNORECASE)
+
+    retrieval_query = re.sub(r"\s{2,}", " ", retrieval_query).strip(" ,:;-.?")
+    return (titles or None), (retrieval_query or query)
+
+
+# ── Helpers ────────────────────────────────────────────────
+
+
+def _answer_with_fallback(
+    query: str,
+    results: list[dict[str, Any]],
+    chat_history: list[dict[str, str]] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """
+    Generate an answer using OpenRouter with a fallback to the local LLM.
+
+    If OpenRouter is rate-limited (429), falls back to the local RAG model
+    so the chatbot stays responsive.
+
+    Args:
+        query: The user's question.
+        results: Retrieved chunks from vector search.
+        chat_history: Optional conversation history for multi-turn context.
+
+    Returns:
+        Tuple of (answer_text, sources_list).
+    """
+    try:
+        if chat_history:
+            answer = ask_openrouter_with_history(query, results, chat_history)
+        else:
+            answer = ask_openrouter(query, results)
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "Rate limit" in err_str or "rate_limit" in err_str:
+            logger.warning("OpenRouter rate-limited, falling back to local RAG model")
+            answer = chat_rag(query, results)
+        else:
+            # Re-raise non-rate-limit errors
+            raise
+
+    answer = to_plain_text(answer)
+
+    sources = [
+        {"id": r["id"], "content": r["content"], "similarity": r["similarity"]}
+        for r in results
+    ]
+    return answer, sources
 
 
 # ── Endpoints ────────────────────────────────────────────
@@ -150,27 +238,32 @@ def health():
 @app.post("/api/upload", response_model=UploadResponse)
 def upload_document(file: UploadFile = File(...)):
     """
-    Upload a PDF document — extracts text, chunks it, embeds via OpenRouter,
+    Upload a document — extracts text, chunks it, embeds via OpenRouter,
     and stores in Supabase pgvector.
+
+    Supported formats: PDF, DOCX, XLSX, XLS, PPTX
     """
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    if not file.filename or not is_supported(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Supported formats: PDF, DOCX, XLSX, PPTX",
+        )
 
-    # Save uploaded PDF temporarily
+    # Save uploaded file temporarily
     unique_name = f"{uuid.uuid4()}_{file.filename}"
-    pdf_path = UPLOAD_DIR / unique_name
+    tmp_path = UPLOAD_DIR / unique_name
 
-    with open(pdf_path, "wb") as f:
+    with open(tmp_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     try:
-        # Extract text
-        text = extract_text_from_pdf(str(pdf_path))
+        # Extract text (routes by extension automatically)
+        text = extract_text(str(tmp_path), file.filename)
 
         if not text.strip():
             raise HTTPException(
                 status_code=400,
-                detail="Could not extract any text from the PDF. The file may be scanned or image-based.",
+                detail="Could not extract any text from the file. It may be scanned, image-only, or empty.",
             )
 
         # Chunk
@@ -190,15 +283,15 @@ def upload_document(file: UploadFile = File(...)):
         count = store_chunks(chunks, embeddings, title)
 
         return UploadResponse(
-            message=f"Document '{title}' processed successfully.",
+            message=f"'{title}' processed successfully ({count} chunks).",
             filename=title,
             chunks_created=count,
         )
 
     finally:
         # Clean up uploaded file
-        if pdf_path.exists():
-            pdf_path.unlink()
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 @app.get("/api/documents")
@@ -233,29 +326,35 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     query = request.query.strip()
-    results = search_similar(embed_batch([query])[0], top_k=request.top_k)
+    filter_titles, retrieval_query = resolve_document_references(query, request.mentioned_docs)
+    results = search_similar(
+        embed_batch([retrieval_query])[0],
+        top_k=request.top_k,
+        filter_titles=filter_titles,
+    )
 
     if not results:
         # No document results at all → use the general chat model
-        answer = chat_general(query)
+        answer = to_plain_text(chat_general(query))
         return ChatResponse(answer=answer, sources=[])
 
     # Check if the best-matched chunk is relevant enough
     max_similarity = max(r.get("similarity", 0) for r in results)
-    if max_similarity < SIMILARITY_THRESHOLD:
-        # Retrieved chunks are below the relevance threshold → use general chat
-        answer = chat_general(query)
+    if max_similarity < SIMILARITY_THRESHOLD and not filter_titles:
+        # Retrieved chunks are below the relevance threshold and no document
+        # was explicitly named → use general chat
+        answer = to_plain_text(chat_general(query))
         return ChatResponse(answer=answer, sources=[])
 
-    # Relevant context found → use strict RAG
-    answer = ask_openrouter(query, results)
+    # Relevant context found → use strict RAG (with OpenRouter fallback)
+    # Note: if filter_titles is set (user named a specific document), we
+    # skip the similarity threshold check — the user explicitly asked about
+    # that document so we should answer from it.
+    answer, sources = _answer_with_fallback(query, results)
 
     return ChatResponse(
         answer=answer,
-        sources=[
-            {"id": r["id"], "content": r["content"], "similarity": r["similarity"]}
-            for r in results
-        ],
+        sources=sources,
     )
 
 
@@ -307,16 +406,22 @@ def api_send_message(session_id: int, body: SessionMessageRequest):
         raise HTTPException(status_code=404, detail="Session not found")
 
     query = body.query.strip()
+    filter_titles, retrieval_query = resolve_document_references(query, body.mentioned_docs)
 
     # 1. Save the user message immediately
     add_message(session_id=session_id, role="user", content=query)
 
     # 2. Retrieve relevant chunks (RAG)
-    results = search_similar(embed_batch([query])[0], top_k=body.top_k)
+    results = search_similar(
+        embed_batch([retrieval_query])[0],
+        top_k=body.top_k,
+        filter_titles=filter_titles,
+    )
 
-    if not results or max((r.get("similarity", 0) for r in results), default=0) < SIMILARITY_THRESHOLD:
+    if not results or (max((r.get("similarity", 0) for r in results), default=0) < SIMILARITY_THRESHOLD and not filter_titles):
         # No relevant document context → use the general chat model
-        answer = chat_general(query)
+        # (unless the user explicitly named a document — then use results anyway)
+        answer = to_plain_text(chat_general(query))
         sources: list[dict[str, Any]] = []
     else:
         # Build history from previous messages for context
@@ -327,13 +432,8 @@ def api_send_message(session_id: int, body: SessionMessageRequest):
             if m["role"] in ("user", "assistant")
         ]
 
-        # 3. Generate answer with conversation history
-        answer = ask_openrouter_with_history(query, results, chat_history)
-
-        sources = [
-            {"id": r["id"], "content": r["content"], "similarity": r["similarity"]}
-            for r in results
-        ]
+        # 3. Generate answer with conversation history (with OpenRouter fallback)
+        answer, sources = _answer_with_fallback(query, results, chat_history)
 
     # 4. Save the assistant response
     saved = add_message(

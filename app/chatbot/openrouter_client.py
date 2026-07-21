@@ -51,6 +51,7 @@ Instructions:
 - If the context contains partial information, answer with what you know and note what's missing.
 - If the answer CANNOT be found in the context, say: "I don't have enough information to answer that from the provided document."
 - Do NOT use any external knowledge or make up information.
+- IMPORTANT: Write your response in PLAIN TEXT only. Do NOT use any markdown formatting (no **bold**, no *italic*, no # headings, no --- lines, no bullet lists with - or *). Use emojis where appropriate to make the text friendly and engaging. Use line breaks and indentation for structure instead of markdown.
 
 Context from the document(s):
 {context_str}"""
